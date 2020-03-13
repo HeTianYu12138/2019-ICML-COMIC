@@ -203,7 +203,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/COMIC-release/code/comic.py</url>
-          <line>123</line>
+          <line>121</line>
           <option name="timeStamp" value="9" />
         </line-breakpoint>
       </breakpoints>

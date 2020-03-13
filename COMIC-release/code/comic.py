@@ -79,7 +79,7 @@ class COMIC:
         S_list = []
         epsilon_list = []
         lamb_list = []
-        # epsilon_mean_list = []
+        epsilon_mean_list = []
         mu_list = []
         max_iter = self.max_iter
 
@@ -118,13 +118,13 @@ class COMIC:
 
             #########初始化epsilon 90% shortest edges in W
             # 与论文不符之处
-            # epsilon = np.sqrt(np.sum((X[i, :] - X[j, :]) ** 2 + self.eps, axis=1))
+            epsilon = np.sqrt(np.sum((X[i, :] - X[j, :]) ** 2 + self.eps, axis=1))
             # Note: suppress low values. This hard coded threshold could lead to issues with very poorly normalized data.
-            epsilon = weights;
+            # epsilon = weights;
             epsilon[epsilon / np.sqrt(n_features) < 1e-2] = np.max(epsilon)
             # take the top 90% of the closest neighbours as a heuristic
-            # top_samples = np.minimum(250.0, math.ceil(n_pairs * self.pair_rate))
-            # epsilon_mean = np.mean(epsilon[:int(top_samples)])
+            top_samples = np.minimum(250.0, math.ceil(n_pairs * self.pair_rate))
+            epsilon_mean = np.mean(epsilon[:int(top_samples)])
             epsilon = np.sort(epsilon)
             ##########初始化mu
             mu = epsilon[-1] ** 2
@@ -161,11 +161,11 @@ class COMIC:
             epsilon_list.append(epsilon)
             mu_list.append(mu)
             xi_list.append(xi)
-            # epsilon_mean_list.append(epsilon_mean)
+            epsilon_mean_list.append(epsilon_mean)
             lamb_list.append(lamb)
             weights = self.to_matrix(weights, i, j, (self.n_samples, self.n_samples))
             weights_list.append(weights)
-        return S_list, Z_list, weights_list, lamb_list, epsilon_list, mu_list, xi_list#, epsilon_mean_list
+        return S_list, Z_list, weights_list, lamb_list, epsilon_list, mu_list, xi_list, epsilon_mean_list
 
     def run_COMIC(self, X_list, w_list):
         '''

@@ -9,27 +9,27 @@ from scipy.sparse import csr_matrix, triu, find
 from scipy.sparse.csgraph import minimum_spanning_tree, connected_components
 from scipy.spatial import distance
 
+
 class COMIC:
     def __init__(self, view_size, data_size, k=10, measure='cosine',
-                 clustering_threshold=1., eps=1e-5, pair_rate = 0.9, gamma=1,
-                 max_iter = 200, verbose=True):
+                 clustering_threshold=1., eps=1e-5, pair_rate=0.9, gamma=1,
+                 max_iter=200, verbose=True):
 
         self.n_samples = data_size
         self.view_size = view_size
-        self.k = k  #k in m-knn
-        self.measure = measure #m-knn距离计算方式
-        self.clustering_threshold = clustering_threshold #voting参数
-        self.eps = eps #epsilon参数
-        self.verbose = verbose#打印结果
-        self.pair_rate = pair_rate#取连接节点的前百分之几，计算epsilon
-        self.gamma = gamma#计算L2 Loss参数
-        self.max_iter = max_iter#最大迭代次数
+        self.k = k  # k in m-knn
+        self.measure = measure  # m-knn距离计算方式
+        self.clustering_threshold = clustering_threshold  # voting参数
+        self.eps = eps  # epsilon参数
+        self.verbose = verbose  # 打印结果
+        self.pair_rate = pair_rate  # 取连接节点的前百分之几，计算epsilon
+        self.gamma = gamma  # 计算L2 Loss参数
+        self.max_iter = max_iter  # 最大迭代次数
 
-
-        self.labels_ = None #聚类结果
-        self.Z = None#映射空间的数据
-        self.i = None #mknn邻接矩阵边的一个节点的索引
-        self.j = None #另一个节点的索引
+        self.labels_ = None  # 聚类结果
+        self.Z = None  # 映射空间的数据
+        self.i = None  # mknn邻接矩阵边的一个节点的索引
+        self.j = None  # 另一个节点的索引
 
     def fit(self, X_list):
         """
@@ -42,15 +42,15 @@ class COMIC:
         assert type(X_list) == list
         assert len(X_list) == self.view_size
 
-        print ('\n*** Compute m-knn graph edges***\n')
+        print('\n*** Compute m-knn graph edges***\n')
         # 计算各视图 m_knn的边 返回结果（i,j)表示xi与xj互相在对方的10最邻近里面
         mknn_list = []
         for view in range(self.view_size):
-            print ('compute m-knn graph of view', view+1)
+            print('compute m-knn graph of view', view + 1)
             # 把shape中为1的维度去掉,(1,nums,dims)->(nums,dims)
             X = np.squeeze(X_list[view])
             m_knn_matrix = self.m_knn(X, self.k, measure=self.measure)
-            print ('m_knn_matrix', m_knn_matrix.shape)
+            print('m_knn_matrix', m_knn_matrix.shape)
             mknn_list.append(m_knn_matrix)
 
         # perform the COMIC clustering
@@ -73,7 +73,7 @@ class COMIC:
 
         # X谱范数
         xi_list = []
-        #mknn W
+        # mknn W
         weights_list = []
         Z_list = []
         S_list = []
@@ -82,7 +82,7 @@ class COMIC:
         mu_list = []
         max_iter = self.max_iter
 
-        print ("\n*** Initiation ***\n")
+        print("\n*** Initiation ***\n")
         for view in range(self.view_size):
             X = X_list[view]
             w = w_list[view]
@@ -90,11 +90,11 @@ class COMIC:
             w = w.astype(np.int32)  # list of edges represented by start and end nodes
             # make sure w as size () * 2
             assert w.shape[1] == 2
-            
+
             # initialization
             n_samples, n_features = X.shape
             n_pairs = w.shape[0]
-            
+
             # list of two nodes of edges
             i = w[:, 0]
             j = w[:, 1]
@@ -102,15 +102,15 @@ class COMIC:
             ########## 初始化W邻接矩阵
             # R [(i,j) 1 (j,i) 1...]
             R = scipy.sparse.coo_matrix((np.ones((i.shape[0] * 2,)),
-                                            (np.concatenate([i, j], axis=0),
-                                            np.concatenate([j, i], axis=0))), shape=[n_samples, n_samples])
+                                         (np.concatenate([i, j], axis=0),
+                                          np.concatenate([j, i], axis=0))), shape=[n_samples, n_samples])
             # mkk 连接边个数 (i,j)与(j,i)各算一个
             n_conn = np.sum(R, axis=1)
             n_conn = np.asarray(n_conn)
             # [m-knn 边的权重]
             weights = np.mean(n_conn) / np.sqrt(n_conn[i] * n_conn[j])
             weights = np.squeeze(weights)
-            
+
             ######### 初始化S,Z
             S = np.ones((i.shape[0],))
             Z = X.copy()
@@ -126,20 +126,22 @@ class COMIC:
             mu = epsilon[-1] ** 2
             epsilon = np.mean(epsilon[:int(math.ceil(n_pairs * self.pair_rate))])
 
+            ######## 初始化lambda
+            # computation of matrix oumiga = D-R (here D is the diagonal matrix and R is the symmetric matrix), see equation (8)
 
-            # computation of matrix A = D-R (here D is the diagonal matrix and R is the symmetric matrix), see equation (8)
-
-            R = scipy.sparse.coo_matrix((np.concatenate([weights * S, weights * S], axis=0),
-                                            (np.concatenate([i, j], axis=0), np.concatenate([j, i], axis=0))),
+            # Rij = Wij*Sij*Sij
+            R = scipy.sparse.coo_matrix((np.concatenate([weights * S * S, weights * S * S], axis=0),
+                                         (np.concatenate([i, j], axis=0), np.concatenate([j, i], axis=0))),
                                         shape=[n_samples, n_samples])
-
+            # Dii = Ri0+Ri1+...+Rin,度矩阵
             D = scipy.sparse.coo_matrix((np.squeeze(np.asarray(np.sum(R, axis=1))),
-                                            ((range(n_samples), range(n_samples)))),
+                                         ((range(n_samples), range(n_samples)))),
                                         (n_samples, n_samples))
 
-            ######## 初始化lambda
-            # note: compute the largest magnitude eigenvalue instead of the matrix norm as it is faster to compute
-            eigval = scipy.sparse.linalg.eigs(D - R, k=1, return_eigenvectors=False).real
+            # 特征值分解比奇异值分解要快，所以这里计算最大的特征值而不是最大的奇异值
+            omiga = D - R
+            eigval = scipy.sparse.linalg.eigs(omiga, k=1, return_eigenvectors=False).real
+            # eigval = np.linalg.norm(omiga.toarray(), 2)
             # precomputing X 谱范数
             xi = np.linalg.norm(X, 2)
             # Calculate lambda as per equation 9.
@@ -147,7 +149,7 @@ class COMIC:
 
             if self.verbose:
                 print('View', view)
-                print('lambda = %.6f, epsilon = %.6f, mu = %.6f' %(lamb, epsilon, mu))
+                print('lambda = %.6f, epsilon = %.6f, mu = %.6f' % (lamb, epsilon, mu))
             # save to list
             self.i_list.append(i)
             self.j_list.append(j)
@@ -172,7 +174,8 @@ class COMIC:
         max_iter = self.max_iter
 
         # preprocess S, Z, and so on
-        S_list, Z_list, weights_list, lamb_list, epsilon_list, mu_list, xi_list= self.pretrain(X_list=X_list, w_list=w_list)
+        S_list, Z_list, weights_list, lamb_list, epsilon_list, mu_list, xi_list = self.pretrain(X_list=X_list,
+                                                                                                w_list=w_list)
         Z_final_concat = np.concatenate((Z_list[:]), axis=1)
 
         # pre-allocate memory for the values of the objective function
@@ -198,20 +201,23 @@ class COMIC:
 
                 i = self.i_list[view]
                 j = self.j_list[view]
-                
+
                 # update S.
-                dist = self.to_matrix(np.sum((Z_list[view][i, :]-Z_list[view][j, :])**2, axis=1), i, j, (self.n_samples, self.n_samples))
+                # 所有 dist_ij = sum(zi-zj)
+                dist = self.to_matrix(np.sum((Z_list[view][i, :] - Z_list[view][j, :]) ** 2, axis=1), i, j,
+                                      (self.n_samples, self.n_samples))
                 S_list[view] = self.update_S(S_list_old, view, lamb_list[view], mu_list[view], weights_list[view], dist)
-                
+
                 # update Z.
-                R = weights_list[view] * (S_list[view]**2)
+                R = weights_list[view] * (S_list[view] ** 2)
                 R = scipy.sparse.coo_matrix(R)
-                D = scipy.sparse.coo_matrix((np.asarray(np.sum(R, axis=1))[:, 0], ((range(n_samples), range(n_samples)))),
-                                            shape=(n_samples, n_samples))
-                L = D-R
-                
+                D = scipy.sparse.coo_matrix(
+                    (np.asarray(np.sum(R, axis=1))[:, 0], ((range(n_samples), range(n_samples)))),
+                    shape=(n_samples, n_samples))
+                L = D - R
+
                 M = scipy.sparse.eye(n_samples) + lamb_list[view] * L
-                
+
                 # Solve for Z. This could be further optimised through appropriate preconditioning.
                 Z_list[view] = scipy.sparse.linalg.spsolve(M, X)
 
@@ -222,8 +228,8 @@ class COMIC:
                 lamb_list[view] = lamb
 
             if (abs(obj[iter_num - 1] - obj[iter_num]) < 1e-8):
-            # if (abs(obj[iter_num - 1] - obj[iter_num]) < 1e-8) and iter_num > 50:
-                print ('Early stop')
+                # if (abs(obj[iter_num - 1] - obj[iter_num]) < 1e-8) and iter_num > 50:
+                print('Early stop')
                 break
 
         # at the end of the run, assign values to the class members.
@@ -249,8 +255,8 @@ class COMIC:
             if view_ == view:
                 continue
             S += self.gamma * S_list[view]
-        div = self.gamma*(self.view_size - 1) + lamb * weights * dist
-        S = (S+mu) / (div+mu)
+        div = self.gamma * (self.view_size - 1) + lamb * weights * dist
+        S = (S + mu) / (div + mu)
         return S
 
     def compute_assignment(self, epsilon_list):
@@ -264,17 +270,17 @@ class COMIC:
         for view in range(self.view_size):
             # computing connected components.
             diff = self.EuclideanDistances(self.Z_list[view], self.Z_list[view])
-            is_conn = np.sqrt(diff) <= self.clustering_threshold*epsilon_list[view]
+            is_conn = np.sqrt(diff) <= self.clustering_threshold * epsilon_list[view]
             is_conn = is_conn + 0
             is_conn_list.append(is_conn)
-        
+
         conn = 0
         for is_conn in is_conn_list:
             conn = conn + is_conn
-        conn = conn > self.view_size/2
+        conn = conn > self.view_size / 2
 
-        G = scipy.sparse.coo_matrix(conn)#返回((i,j),True)表示i,j节点连接
-        num_components, labels = connected_components(G, directed=False)#连接图统计函数
+        G = scipy.sparse.coo_matrix(conn)  # 返回((i,j),True)表示i,j节点连接
+        num_components, labels = connected_components(G, directed=False)  # 连接图统计函数
         ret['vote'] = labels
 
         return ret
@@ -296,27 +302,27 @@ class COMIC:
         l1 = 0
         l2 = 0
         for view in range(self.view_size):
-            l1 += 0.5 * np.mean(np.sum((X_list[view] - Z_list[view])**2, axis=1))
+            l1 += 0.5 * np.mean(np.sum((X_list[view] - Z_list[view]) ** 2, axis=1))
             i = self.i_list[view]
             j = self.j_list[view]
-            dist = self.to_matrix(np.sum((Z_list[view][i, :]-Z_list[view][j, :])**2, axis=1), i, j, (self.n_samples, self.n_samples))
-            dot = weights_list[view] * (S_list[view]**2) * dist
-            l2 += 0.5 * lamb_list[view] * (np.mean(dot)+ mu_list[view] * np.mean((S_list[view]-1)**2))
-        L1 = (l1+l2) / self.view_size
+            dist = self.to_matrix(np.sum((Z_list[view][i, :] - Z_list[view][j, :]) ** 2, axis=1), i, j,
+                                  (self.n_samples, self.n_samples))
+            dot = weights_list[view] * (S_list[view] ** 2) * dist
+            l2 += 0.5 * lamb_list[view] * (np.mean(dot) + mu_list[view] * np.mean((S_list[view] - 1) ** 2))
+        L1 = (l1 + l2) / self.view_size
 
         # L_2
         L2 = 0
         # generate permutation of different views
         ls = itertools.permutations(range(self.view_size), 2)
-        
+
         for (view_i, view_j) in ls:
-            L2 += 0.5 * np.mean((S_list[view_i]-S_list[view_j])**2)
-        L2 = L2 * 0.5
+            L2 += 0.5 * np.mean((S_list[view_i] - S_list[view_j]) ** 2)
         # final objective
         loss = L1 + self.gamma * L2
 
         if self.verbose:
-            print('iter: %d,  loss: %.20f' %(iter_num, loss))
+            print('iter: %d,  loss: %.20f' % (iter_num, loss))
         return loss
 
     def EuclideanDistances(self, A, B):
@@ -328,18 +334,18 @@ class COMIC:
         :return:
         '''
         BT = B.transpose()
-        vecProd = np.dot(A,BT)
-        SqA =  A**2
+        vecProd = np.dot(A, BT)
+        SqA = A ** 2
 
         sumSqA = np.matrix(np.sum(SqA, axis=1))
         sumSqAEx = np.tile(sumSqA.transpose(), (1, vecProd.shape[1]))
 
-        SqB = B**2
+        SqB = B ** 2
         sumSqB = np.sum(SqB, axis=1)
         sumSqBEx = np.tile(sumSqB, (vecProd.shape[0], 1))
 
-        SqED = sumSqBEx + sumSqAEx - 2*vecProd
-        SqED[SqED<0]=0.0
+        SqED = sumSqBEx + sumSqAEx - 2 * vecProd
+        SqED[SqED < 0] = 0.0
         ED = np.sqrt(SqED)
         return ED
 
